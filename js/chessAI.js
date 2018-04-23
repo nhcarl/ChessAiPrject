@@ -1,17 +1,40 @@
+/**
+*
+*   @author: Nicholas Carl
+*   @date: 4/23/2018
+*   @class: CSCI472: Senior Project
+*   @professor: Dr. Marietta Cameron
+*   
+*   Javascript creates a chess AI agent using Minimax algorithm with alpha-beta pruning and transposition tables using
+*   zobrist hashing. The webpage allows for people to play a full game of chess against the AI at the search depth
+*   they choose. Users can also choose to switch the color of the AI, or have the game be played by two ai agents
+*   to see how AIs using different search depths play against each other.   
+*
+*   Project website: http://www.chessaiproject.com
+*
+*   Frameworks used to help with board visualization and chess move/rule set include:
+*       chessboard.js (https://github.com/oakmac/chessboardjs)
+*       chess.js (https://github.com/jhlywa/chess.js/blob/master/README.md)
+*   
+*   chessboard represented by 'board' in code. All methods used from chessboard.js show up in code as board.METHOD()
+*   chess move/rule set represented by 'game' in code. All methods used from chess.js show up in code as chess.METHOD() 
+**/
+
 /*jslint bitwise: true*/
 
+// Initialize global variables
 var ChessBoard,
     Chess,
     board,
     game = new Chess(),
     aiColor = 'b',
     autoPlayBoolean = 0,
-    INFINITY = 999999999,
+    INFINITY = 99999,
 	FEN,
 	PGN,
     table = new Array(64),
     transpositionTable,
-    transpositionTableSize = 1005,
+    transpositionTableSize = 1005, //magic number. Chosen because 1000 had too many hash collisions.
     moveStartTime,
     $,
     XMLHttpRequest,
@@ -19,8 +42,8 @@ var ChessBoard,
     window;
 
 
-//Update FEN string and PGN on server and also prints them out on webpage.
-var updateFenPgn = function () {
+// Update FEN string and PGN on server and also prints them out on webpage.
+function updateFenPgn() {
     "use strict";
 	if (game.in_checkmate() === true) {
 		if (game.turn() === 'b') {
@@ -45,20 +68,9 @@ var updateFenPgn = function () {
 
     $('#FEN').text(FEN);
     $('#PGN').text(PGN);
-};
-
-
-function sendStartOfGameFEN() {
-    "use strict";
-    var xhttp = new XMLHttpRequest(),
-        start = "Start of Game: \n" + game.fen();
-
-	xhttp.open("POST", "/cgi-bin/sendFen.cgi");
-	xhttp.setRequestHeader("content-type", "application/x-www-form-urlencoded");
-	xhttp.send("start=" + start);
 }
 
-//Uses AJAX to call sendFen.cgi script, which adds the boards current FEN to a log on the server
+// Uses AJAX to call sendFen.cgi script, which adds the boards current FEN to a log on the server
 function sendFEN() {
 	"use strict";
     var xhttp = new XMLHttpRequest(),
@@ -69,7 +81,7 @@ function sendFEN() {
 	xhttp.send("fen=" + fen);
 }
 
-//Uses AJAX to call sendPGN.cgi script, which adds the game's PGN a log on the server
+// Uses AJAX to call sendPGN.cgi script, which adds the game's PGN a log on the server
 function sendPGN() {
     "use strict";
 	var xhttp = new XMLHttpRequest(),
@@ -80,8 +92,8 @@ function sendPGN() {
 	xhttp.send("pgn=" + pgn);
 }
 
-//Alerts webpage if game is over, and sends the final FEN and PGN to the server
-var checkGameStatus = function () {
+// Alerts webpage if game is over, and sends the final FEN and PGN to the server
+function checkGameStatus() {
     "use strict";
     if (game.in_checkmate() === true) {
         if (game.turn() === 'b') {
@@ -112,13 +124,13 @@ var checkGameStatus = function () {
         sendFEN();
         autoPlayBoolean = 0;
     }
-};
+}
 
-//AI starts
-//Zoborist hashing and transposition table
+// AI starts here
+// Zobrist hashing and transposition table
 
-
-var indexOf = function (piece) {
+// Returns number to represent each different piece on board
+function indexOf(piece) {
     "use strict";
     if (piece === "P") {
         return 0;
@@ -158,9 +170,10 @@ var indexOf = function (piece) {
     } else {
         return -1;
     }
-};
+}
 
-var validChar = function (positionOnBoard) {
+// Helps getBoardPosition parse through the ASCII representation of the board position by returning true only if the ASCII character is representing a piece or empty space
+function validChar(positionOnBoard) {
     "use strict";
     //console.log(string);
     if (positionOnBoard === 'P' || positionOnBoard === 'R' || positionOnBoard === 'N' || positionOnBoard === 'B' || positionOnBoard === 'Q' || positionOnBoard === 'K' || positionOnBoard === 'p' || positionOnBoard === 'r' || positionOnBoard === 'n' || positionOnBoard === 'b' || positionOnBoard === 'q' || positionOnBoard === 'k' || positionOnBoard === '.') {
@@ -168,11 +181,13 @@ var validChar = function (positionOnBoard) {
     } else {
         return false;
     }
-};
+}
 
-// game.ascii() (which creates a string to represent the current board position in ascii) and loops through the array, parsing out everything that's not
-// a piece or empy space on the board. 
-var getBoardPosition = function (game) {
+// Uses game.ascii() (which creates a string to represent the current board position in ascii) and loops through the array, parsing out everything that's not
+// a piece or empy space on the board.
+// boardPos is an array of the ASCII string. It splits up the string by spaces, so only the characters from game.ascii() are in the array.
+// Returns a 1D array representing the current 8x8 board position
+function getBoardPosition(game) {
     "use strict";
     var boardPos = game.ascii().split(" "),
         boardRep = "",
@@ -184,18 +199,10 @@ var getBoardPosition = function (game) {
         }
     }
     return boardRep.split(" ");
-};
-
-function absoluteValue(number) {
-    "use strict";
-    if (number < 1) {
-        return number * -1;
-    } else {
-        return number;
-    }
 }
 
-function initZobristHash() {
+// Initializes the 64x12 (64 for each position on a chessboard, 12 for each different type of piece) 2D array with random 64bit positive numbers.
+function initZobristHashTable() {
     "use strict";
     var i,
         j;
@@ -207,14 +214,17 @@ function initZobristHash() {
     
     for (i = 0; i < 64; i += 1) {
         for (j = 0; j < 12; j += 1) {
-            table[i][j] = absoluteValue(Math.floor(Math.random() * Math.pow(2, 64)));
+            table[i][j] = Math.abs((Math.floor(Math.random() * Math.pow(2, 64))));
         }
     }
 }
    
+// Gets the Zobrist hash key of the current board position by looping through the zobrist hash table and stores the hash key as the bitwise XOR of the current hashkey
+// and the zobrist number of the the current square of the board the loop is on.
+// Returns the unique hash key of the current board position.
 function getHashKey(game) {
     "use strict";
-    var h = 0,
+    var hashKey = 0,
         boardPos = getBoardPosition(game),
         i,
         j;
@@ -222,12 +232,13 @@ function getHashKey(game) {
     for (i = 0; i < 64; i += 1) {
         if (boardPos[i] !== ".") {
             j = indexOf(boardPos[i]);
-            h = absoluteValue(h ^ table[i][j]);
+            hashKey = Math.abs((hashKey ^ table[i][j]));
         }
     }
-    return h;
+    return hashKey;
 }
 
+// Initializes the transposition table to a 1D array whose size is the global variable transpositionTableSize
 function initTranspositionTable() {
     "use strict";
     var i;
@@ -237,15 +248,20 @@ function initTranspositionTable() {
     }
 }
 
+// Maps the zobristHashKey, flag, current search depth, and heuristic value of the current board position to the transposition table by
+// storing them at the index in the array equal to the zobristHashKey modulus the size of the transposition table.
+// flag: a String variable that states whether the current board position is a lowerbound, upperbound, or exact value.
+// exact value represents a leaf in the game tree. Lowerbound/upperbound represent a board position that resulted in a alpha/beta cut-off.
 function storeTranspositionTableEntry(zobristKey, flag, depth, value) {
     "use strict";
     var entry = [zobristKey, flag, depth, value];
-    transpositionTable[absoluteValue(zobristKey % transpositionTableSize)] = entry;
+    transpositionTable[Math.abs((zobristKey % transpositionTableSize))] = entry;
 }
 
+// Returns the location of the zobristHashKey in the transposition table if it's stored there.
 function getTranspositionTableEntry(zobristKey) {
     "use strict";
-    var entryLocation = transpositionTable[absoluteValue(zobristKey % transpositionTableSize)];
+    var entryLocation = transpositionTable[Math.abs((zobristKey % transpositionTableSize))];
     if (entryLocation[0] === zobristKey) {
         return entryLocation;
     } else {
@@ -253,10 +269,11 @@ function getTranspositionTableEntry(zobristKey) {
     }
 }
 
-//Piece-Square Tables from chessprogramming.com. Modified slightly to tune to how I want to AI to play
+// Piece-Square Tables representing values of each space for each different chess piece
+// Initial piece square tables from chessprogramming.com. Modified slightly to tune to how I wanted to AI to play.
 var evalBlackPawn = [
     [ 0,  0,   0,   0,   0,   0,  0,  0],
-    [ 5, 10,  10, -20, -20,  10, 10,  5],
+    [ 5, 10,  10, -25, -25,  10, 10,  5],
     [ 5, -5, -10,   0,   0, -10, -5,  5],
     [ 0,  0,   0,  20,  20,   0,  0,  0],
     [ 5,  5,  10,  25,  25,  10,  5,  5],
@@ -332,30 +349,12 @@ var evalBlackKing = [
 
 var evalWhiteKing = evalBlackKing.slice().reverse();
 
-var checkOrientation = function () {
-    "use strict";
-    if (aiColor === 'white') {
-        evalBlackPawn = evalBlackPawn.slice().reverse();
-        evalBlackRook = evalBlackRook.slice().reverse();
-        evalBlackBishop = evalBlackBishop.slice().reverse();
-        evalBlackKnight = evalBlackKnight.slice().reverse();
-        evalBlackQueen = evalBlackQueen.slice().reverse();
-        evalBlackKing = evalBlackKing.slice().reverse();
-        evalWhitePawn = evalWhitePawn.slice().reverse();
-        evalWhiteRook = evalWhiteRook.slice().reverse();
-        evalWhiteBishop = evalWhiteBishop.slice().reverse();
-        evalWhiteKnight = evalWhiteKnight.slice().reverse();
-        evalWhiteQueen = evalWhiteQueen.slice().reverse();
-        evalWhiteKing = evalWhiteKing.slice().reverse();
-    }
-};
+// Evaluation function
 
-//Evaluation function
-
-var evaluateBoard = function (board) {
+// Loops through current board position, finding the value of each piece plus the pieces current position.
+// Returns the sum of all the squares values on the board.
+function evaluateBoard(board) {
     "use strict";
-    checkOrientation();
-    
     var evaluation = 0,
         i = 0,
         j = 0,
@@ -365,7 +364,7 @@ var evaluateBoard = function (board) {
             if (piece.type === null) {
                 return 0;
             }
-            var getAbsoluteValue = function (piece) {
+            function getAbsoluteValue(piece) {
                 if (piece.type === 'p') {
                     if (piece.color === 'b') {
                         return 100 + evalBlackPawn[x][y];
@@ -386,9 +385,9 @@ var evaluateBoard = function (board) {
                     }
                 } else if (piece.type === 'b') {
                     if (piece.color === 'b') {
-                        return 320 + evalBlackBishop[x][y];
+                        return 330 + evalBlackBishop[x][y];
                     } else {
-                        return 320 + evalWhiteBishop[x][y];
+                        return 330 + evalWhiteBishop[x][y];
                     }
                 } else if (piece.type === 'q') {
                     if (piece.color === 'b') {
@@ -404,8 +403,9 @@ var evaluateBoard = function (board) {
                     }
                 }
                 throw "Unknown piece type: " + piece.type;
-            };
-
+            }
+            
+            // if searching for minimizing player (not the AI), then return a negative value.
             if (aiColor !== piece.color) {
                 if (game.in_checkmate() === true) {
                     return -INFINITY;
@@ -430,104 +430,116 @@ var evaluateBoard = function (board) {
         }
     }
     return evaluation;
-};
+}
 
-var alphabeta = function (game, depth, alpha, beta, maximizingPlayer) {
+// Minimax with Alpha-Beta pruning
+// variables given to call
+// game: the current chess game
+// depth: search depth
+// alpha: alpha value. Initial call alpha = -infinity
+// beta: beta value. Initial call beta = infinity
+// maximizingPlayer: boolean where true means the search is meant for the maximizing player.
+// returns value of board position at leaf in tree, or at position where alpha/beta cut-off occurs 
+function alphabeta(game, depth, alpha, beta, maximizingPlayer) {
     "use strict";
-    var a = alpha,
-        b = beta,
-        gameMoves,
-        v,
+    var gameMoves,
+        value,
         i,
         j,
         transpositionTableEntry = getTranspositionTableEntry(getHashKey(game));
 
+    // update alpha and beta, or return value based on previous transposition table entries
     if (transpositionTableEntry !== "null"  && transpositionTableEntry[2] >= depth) {
         if (transpositionTableEntry[1] === "EXACT") {
             return transpositionTableEntry[3];
         }
-        if (transpositionTableEntry === "LOWERBOUND" && transpositionTableEntry[3] > a) {
-            a = transpositionTableEntry[3];           // update lowerbound alpha if needed
-        } else if (transpositionTableEntry[1] === "UPPERBOUND" && transpositionTableEntry[3] < b) {
-            b = transpositionTableEntry[3];           // update upperbound beta if needed
+        if (transpositionTableEntry === "LOWERBOUND" && transpositionTableEntry[3] > alpha) {
+            alpha = transpositionTableEntry[3];           // update lowerbound alpha if needed
+        } else if (transpositionTableEntry[1] === "UPPERBOUND" && transpositionTableEntry[3] < beta) {
+            beta = transpositionTableEntry[3];           // update upperbound beta if needed
         }
-        if (a >= b) {
+        if (alpha >= beta) {
             return transpositionTableEntry[3];            // if lowerbound surpasses upperbound   
         }
     }
     
+    // return heuristic evaluation value of board
     if (depth === 0) {
-        v = evaluateBoard(game.board());
-        if (v <= a) {
-            // a lowerbound value
-            storeTranspositionTableEntry(getHashKey(game), "LOWERBOUND", depth, v);
-        } else if (v >= b) {
-            // an upperbound value
-            storeTranspositionTableEntry(getHashKey(game), "UPPERBOUND", depth, v);
+        value = evaluateBoard(game.board());
+        // store board position in transposition table
+        if (value <= alpha) {
+            storeTranspositionTableEntry(getHashKey(game), "LOWERBOUND", depth, value);
+        } else if (value >= beta) {
+            storeTranspositionTableEntry(getHashKey(game), "UPPERBOUND", depth, value);
         } else {
-            // a true minimax value
-            storeTranspositionTableEntry(getHashKey(game), "EXACT", depth, v);
+            storeTranspositionTableEntry(getHashKey(game), "EXACT", depth, value);
         }
-        return v;
+        return value;
     }
 
+    // get current game moves of the chess match
     gameMoves = game.moves();
     
     if (maximizingPlayer === true) {
-        v = -INFINITY;
+        value = -INFINITY;
         for (i = 0; i < gameMoves.length; i += 1) {
             game.move(gameMoves[i]);
-            v = Math.max(v, alphabeta(game, depth - 1, a, b, false));
-            a = Math.max(a, v);
+            value = Math.max(value, alphabeta(game, depth - 1, alpha, beta, false));
+            alpha = Math.max(alpha, value);
             game.undo();
-            if (b <= a) {
+            if (beta <= alpha) {
                 break;
             }
-            if (new Date().getTime() - moveStartTime > 15000) {
+            if (new Date().getTime() - moveStartTime > 20000) {
                 break;
             }
         }
         
-        if (v <= a) {
+        // store board position in transposition table
+        if (value <= alpha) {
             // a lowerbound value
-            storeTranspositionTableEntry(getHashKey(game), "LOWERBOUND", depth, v);
-        } else if (v >= b) {
+            storeTranspositionTableEntry(getHashKey(game), "LOWERBOUND", depth, value);
+        } else if (value >= beta) {
             // an upperbound value
-            storeTranspositionTableEntry(getHashKey(game), "UPPERBOUND", depth, v);
+            storeTranspositionTableEntry(getHashKey(game), "UPPERBOUND", depth, value);
         } else {
             // a true minimax value
-            storeTranspositionTableEntry(getHashKey(game), "EXACT", depth, v);
+            storeTranspositionTableEntry(getHashKey(game), "EXACT", depth, value);
         }
-        return v;
+        return value;
     } else {
-        v = INFINITY;
+        value = INFINITY;
         for (j = 0; j < gameMoves.length; j += 1) {
             game.move(gameMoves[j]);
-            v = Math.min(v, alphabeta(game, depth - 1, a, b, true));
-            b = Math.min(b, v);
+            value = Math.min(value, alphabeta(game, depth - 1, alpha, beta, true));
+            beta = Math.min(beta, value);
             game.undo();
-            if (b <= a) {
+            if (beta <= alpha) {
                 break;
             }
-            if (new Date().getTime() - moveStartTime > 15000) {
-                break;
-            }
+            //if (new Date().getTime() - moveStartTime > 20000) {
+            //    break;
+            //}
         }
-        if (v <= a) {
+        
+        // store board position in transposition table
+        if (value <= alpha) {
             // a lowerbound value
-            storeTranspositionTableEntry(getHashKey(game), "LOWERBOUND", depth, v);
-        } else if (v >= b) {
+            storeTranspositionTableEntry(getHashKey(game), "LOWERBOUND", depth, value);
+        } else if (value >= beta) {
             // an upperbound value
-            storeTranspositionTableEntry(getHashKey(game), "UPPERBOUND", depth, v);
+            storeTranspositionTableEntry(getHashKey(game), "UPPERBOUND", depth, value);
         } else {
             // a true minimax value
-            storeTranspositionTableEntry(getHashKey(game), "EXACT", depth, v);
+            storeTranspositionTableEntry(getHashKey(game), "EXACT", depth, value);
         }
-        return v;
+        return value;
     }
-};
+}
 
-var alphaBetaRoot = function (game, depth, maximizingPlayer) {
+// Root of the recursive function alphaBeta.
+// Allows for the final value found to be converted into its corresponding game move.
+function alphaBetaRoot(game, depth, maximizingPlayer) {
     "use strict";
     var gameMoves = game.moves(),
         bestMove = -INFINITY,
@@ -535,7 +547,6 @@ var alphaBetaRoot = function (game, depth, maximizingPlayer) {
         gameMove,
         value,
         i;
-        //transpositionTableEntry = getTranspositionTableEntry(getHashKey(game));
     
     for (i = 0; i < gameMoves.length; i += 1) {
         gameMove = gameMoves[i];
@@ -546,23 +557,24 @@ var alphaBetaRoot = function (game, depth, maximizingPlayer) {
             bestMove = value;
             bestMoveFound = gameMove;
         }
-        //console.log(new Date().getTime() - startTime);
         //if Root search takes longer than 15 seconds, cut off search
-        if (new Date().getTime() - moveStartTime > 15000) {
-            break;
-        }
+        //if (new Date().getTime() - moveStartTime > 20000) {
+        //    break;
+        //}
     }
     return bestMoveFound;
-};
+}
 
-var getMove = function (game, depth) {
+// calls alphaBeta root to recursively go through game tree and find the best move
+function getMove(game, depth) {
     "use strict";
     moveStartTime = new Date().getTime();
     var move = alphaBetaRoot(game, depth, true);
     return move;
-};
+}
 
-var makeMove = function () {
+// makes move found by get move after passing it the selcted depth chosen by the user
+function makeMove() {
     "use strict";
     var bestMove,
         depth;
@@ -578,91 +590,96 @@ var makeMove = function () {
     board.position(game.fen());
     sendFEN();
     checkGameStatus();
+    // displays time taken for AI to find last move on webpage
     if (aiColor === 'b') {
         $('#blackMoveTime').text((new Date().getTime() - moveStartTime) / 1000 + " seconds");
     } else {
         $('#whiteMoveTime').text((new Date().getTime() - moveStartTime) / 1000 + " seconds");
     }
-};
+}
 
-/*var makeRandomMove = function () {
-    "use strict";
-    var moves = game.moves(),
-        move = moves[Math.floor(Math.random() * moves.length)];
-    game.move(move);
-};*/
-
-var switchAIColor = function () {
+// allows AI color to be switched so other functions can check which color is the AI, and switch it if needed
+function switchAIColor() {
     "use strict";
     if (aiColor === 'b') {
         aiColor = 'w';
     } else {
         aiColor = 'b';
     }
-};
+}
 
-var switchAI = function () {
+// switch the current AI color and have the new AI make a move
+function switchAI() {
     "use strict";
     switchAIColor();
     makeMove();
-};
+}
 
-var secondAIAgent = function () {
+// autoplays game of chess with 2 AI agents
+function secondAIAgent() {
     "use strict";
     if (game.game_over() !== true) {
         switchAIColor();
         if (autoPlayBoolean === 1) {
-            if (aiColor === 'b') {
-                makeMove();
-                board.position(game.fen());
-            } else {
-                makeMove();
-                board.position(game.fen());
-            }
+            makeMove();
+            board.position(game.fen());
             window.setTimeout(secondAIAgent, 250);
         }
     } else {
         checkGameStatus();
     }
-};
+}
 
 //Board Visualization
-var onDragStart = function (source, piece) {
+
+// Only let user drag pieces if the game is still ongoing and they are trying to move a piece from the side whose turn it is
+function onDragStart(source, piece) {
     "use strict";
     if (game.game_over() === true || (game.turn() === 'w' && piece.search(/^b/) !== -1) || (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
         return false;
     }
-};
+}
 
-var onDrop = function (source, target) {
+// Allows player to move pieces
+function onDrop(source, target) {
     "use strict";
-    // see if the move is legal
+    // move piece to target position
     var move = game.move({
         from: source,
         to: target,
-        promotion: 'q'
+        promotion: 'q' //always promote pawn to queen
     });
 
-    // illegal move
+    // Snap piece back to initial position if the move is illegal
     if (move === null) {
         return 'snapback';
     }
     
     updateFenPgn();
+    
+    // AI moves after human player moves piece
     if (game.in_checkmate() !== true && game.in_stalemate() !== true && game.in_draw() !== true) {
         window.setTimeout(makeMove, 250);
     }
-};
+}
 
-// update the board position after the piece snap 
-var onSnapEnd = function () {
+// Updates the board position after the piece snap, sends current FEN to server, and checks if game is over
+function onSnapEnd() {
     "use strict";
     board.position(game.fen());
     sendFEN();
     checkGameStatus();
-};
+}
 
-var cfg = {
+// Configuration variables from chessboard.js frameworks
+//
+// configure of abilities the chessboard allows
+// dragable: allows player to drag pieces
+// position: where the pieces are located when board is initialized
+// onDragStart: function telling board what to do when player drags a piece
+// onDrop: function telling board what to do when player drops piece
+// onSnapEnd: function telling board what to do when piece finishes snapping to new, or original square, after being dragged
+var configuration = {
     draggable: true,
     position: 'start',
     onDragStart: onDragStart,
@@ -670,12 +687,12 @@ var cfg = {
     onSnapEnd: onSnapEnd
 };
 
-board = new ChessBoard('board', cfg);
-sendStartOfGameFEN();
+board = new ChessBoard('board', configuration); //initialize board
 updateFenPgn();
 initTranspositionTable();
-initZobristHash();
+initZobristHashTable();
 
+// Hides the end-of-game alerts so they are not always showing during the game. 
 $(document).ready(function () {
     "use strict";
     $("#whiteInCheckmate").hide();
@@ -688,7 +705,9 @@ $(document).ready(function () {
     });
 });
 
-//buttons
+// Buttons on webpage
+
+// Only works when game is not autoplaying
 function autoPlay() {
     "use strict";
 	if (autoPlayBoolean !== 1) {
@@ -697,14 +716,16 @@ function autoPlay() {
 	}
 }
 
+// Only works when game is autoplaying
 function stopAutoPlay() {
     "use strict";
     if (autoPlayBoolean === 1) {
         autoPlayBoolean = 0;
-        switchAIColor();
+        switchAIColor(); //necessary so the aiColor is still correct/not out of synce
     }
 }
 
+// Only works when game is not autoplaying
 function switchAIButton() {
     "use strict";
     if (autoPlayBoolean === 0) {
@@ -712,7 +733,7 @@ function switchAIButton() {
     }
 }
 
-//Only undoes last move if game is currently not autoplaying.
+// Only works when game is not autoplaying
 function undoMove() {
     "use strict";
     if (autoPlayBoolean === 0) {
@@ -722,6 +743,8 @@ function undoMove() {
     }
 }
 
+// Flips the orientation of the chessboard.
+// Only works when game is not autoplaying
 function flipBoard() {
     "use strict";
     if (autoPlayBoolean === 0) {
@@ -729,7 +752,9 @@ function flipBoard() {
     }
 }
 
-//resets the chess game to the start position
+// resets the chess game to the start position.
+// re-initializes the board position, aiColor to black, and the zobrist/transposition tables.
+// Only works when game is not autoplaying
 function reset() {
     "use strict";
     if (autoPlayBoolean === 0) {
@@ -737,11 +762,12 @@ function reset() {
         board.position(game.fen());
         aiColor = 'b'; //resets aiColor black, which is the ;laskdjf for the beginning of the game
         updateFenPgn();
-        initZobristHash();
+        initZobristHashTable();
         initTranspositionTable(); //Clears transposition table for the new game
     }
 }
 
+//give buttons their functionality
 $('#secondAIBtn').on('click', autoPlay);
 $('#stopAutoBtn').on('click', stopAutoPlay);
 $('#switchAIBtn').on('click', switchAIButton);
