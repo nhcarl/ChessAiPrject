@@ -490,7 +490,8 @@ function alphabeta(game, depth, alpha, beta, maximizingPlayer) {
             if (beta <= alpha) {
                 break;
             }
-            if (new Date().getTime() - moveStartTime > 20000) {
+            // If search has taken longer than 30 seconds, cut it off.
+            if (new Date().getTime() - moveStartTime > 30000) {
                 break;
             }
         }
@@ -517,9 +518,10 @@ function alphabeta(game, depth, alpha, beta, maximizingPlayer) {
             if (beta <= alpha) {
                 break;
             }
-            //if (new Date().getTime() - moveStartTime > 20000) {
-            //    break;
-            //}
+            // If search has taken more than 30 seconds, cut it off.
+            if (new Date().getTime() - moveStartTime > 30000) {
+                break;
+            }
         }
         
         // store board position in transposition table
@@ -557,10 +559,10 @@ function alphaBetaRoot(game, depth, maximizingPlayer) {
             bestMove = value;
             bestMoveFound = gameMove;
         }
-        //if Root search takes longer than 15 seconds, cut off search
-        //if (new Date().getTime() - moveStartTime > 20000) {
-        //    break;
-        //}
+        //if Root search takes longer than 30 seconds, cut off search
+        if (new Date().getTime() - moveStartTime > 30000) {
+            break;
+        }
     }
     return bestMoveFound;
 }
@@ -569,7 +571,15 @@ function alphaBetaRoot(game, depth, maximizingPlayer) {
 function getMove(game, depth) {
     "use strict";
     moveStartTime = new Date().getTime();
-    var move = alphaBetaRoot(game, depth, true);
+    var move,
+        d;
+    //Use iterative deepening and cut search off after 30 seconds
+    for (d = 1; d <= depth; d += 1) {
+        move = alphaBetaRoot(game, d, true);
+        if (new Date().getTime() - moveStartTime > 30000) {
+            break;
+        }
+    }
     return move;
 }
 
